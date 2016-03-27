@@ -1,18 +1,38 @@
-var transform = require('simple-csvtojson');
+var parse = require('csv-parse');
+var transform = require('stream-transform');
+var combine = require('stream-combiner2');
 
-var outStream = fs.createWriteStream('./out/flint.json');
+module.exports = function(options) {
+  if (!options) throw new Error('Options not specified');
+  if (!options.map) throw new Error('Options.map not specified');
 
-fs.createReadStream('./data/flintpoliceops_facebook_statuses.csv')
-  .pipe(transform({
-    delimiter: ',',
-    map: {
-      'status_id': 0,
-      'status_message': 1,
-      'status_published': 5,
-      'num_likes': 6,
-      'num_comments': 7
-    },
-    skipHeader: true
-  }))
-  // .pipe(process.stdout)
-  .pipe(outStream);
+  options.delimiter = options.delimiter ? options.delimiter:  '\t';
+
+  var finish = false;
+  var parser = parse({delimiter: options.delimiter, quote: ''});
+  parser.on('finish', function(){
+    console.log('finishing', parser.count, parser.lines);
+
+  });
+  var headerPassed = false;
+
+  var transformer = transform(function(record, callback){
+    if (options.skipHeader && !headerPassed) {
+      headerPassed = true;
+      return callback(null, '[');
+    }
+
+    var item = {};
+    Object.keys(options.map).forEach(function(key){
+      item[key] = record[options.map[key]];
+    });
+    console.log('count', parser.count, parser.lines);
+    callback(null, JSON.stringify(item) + ',\n');
+  }, {parallel: 10});
+
+
+  return combine([
+    parser,
+    transformer
+  ]);
+};
